@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Subir archivos · Grupos</title>
+  <link rel="stylesheet" href="styles.css" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+</head>
+<body>
+  <div class="container">
+    <header>
+      <div class="logo">📁</div>
+      <h1>Subir archivos</h1>
+      <p class="subtitle">Elige tu grupo y sube el archivo. Se guardará automáticamente en la carpeta compartida.</p>
+    </header>
+
+    <main class="card">
+      <form id="uploadForm">
+        <!-- Selector de grupo -->
+        <div class="form-group">
+          <label for="group">Grupo</label>
+          <select id="group" name="group" required>
+            <option value="" disabled selected>Selecciona tu grupo…</option>
+            <!-- Se llena desde el diccionario en script.js -->
+          </select>
+        </div>
+
+        <!-- Nombre del estudiante (opcional pero recomendado) -->
+        <div class="form-group">
+          <label for="studentName">Tu nombre <span class="optional">(opcional)</span></label>
+          <input type="text" id="studentName" name="studentName" placeholder="Ej: Ana Pérez" maxlength="80" />
+        </div>
+
+        <!-- Zona de arrastre de archivos -->
+        <div class="form-group">
+          <label>Archivo</label>
+          <div class="dropzone" id="dropzone">
+            <input type="file" id="fileInput" name="file" required />
+            <div class="dropzone-content">
+              <div class="icon">📄</div>
+              <p><strong>Arrastra el archivo aquí</strong> o haz clic para seleccionar</p>
+              <p class="hint">PDF, Word, imágenes, etc. (máx. ~45 MB)</p>
+            </div>
+          </div>
+          <div id="fileInfo" class="file-info hidden"></div>
+        </div>
+
+        <button type="submit" id="submitBtn" class="btn-primary" disabled>
+          <span class="btn-text">Subir archivo</span>
+          <span class="btn-loading hidden">Subiendo…</span>
+        </button>
+      </form>
+
+      <!-- Mensajes de estado -->
+      <div id="status" class="status hidden"></div>
+    </main>
+
+    <footer>
+      <p>Los archivos se guardan directamente en la carpeta compartida del grupo.</p>
+    </footer>
+  </div>
+
+  <script src="script.js"></script>
+</body>
+</html>
