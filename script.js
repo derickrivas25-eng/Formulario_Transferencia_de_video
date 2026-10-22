@@ -1,145 +1,441 @@
-/**
- * Diccionario de grupos → ID de carpeta de Google Drive
- * Agrega más grupos aquí cuando los tengas.
- *
- * Ejemplo:
- * "5 grado": "OTRO_ID_DE_CARPETA",
- * "6 grado": "OTRO_ID",
- */
-const GROUPS = {
-  "4 grado": "1bzGqNBcVxNw-biWlALLJS0a_OM8rKIyo"
-  // Agrega más aquí ↓
-  // "5 grado": "ID_DE_LA_CARPETA_5",
-};
 
-/**
- * URL de tu Google Apps Script desplegado como Web App.
- * Después de desplegar el script, pega aquí la URL completa
- * (termina en /exec).
- *
- * Ejemplo: "https://script.google.com/macros/s/AKfycb.../exec"
- */
-const SCRIPT_URL = "PEGAR_AQUI_LA_URL_DE_TU_APPS_SCRIPT";
+const SCRIPT_URL =
+  "https://script.google.com/macros/s/AKfycbx5wwASuQDPJi5PcMEj7Ud1pryVcivNBIBnDxH5vRZ0qSzeGfGBdM2z7tGuL9SE9Ha3/exec";
 
-// ---------- Lógica de la interfaz ----------
+const DATABASE_URL =
+  "https://raw.githubusercontent.com/TU_USUARIO/TU_REPOSITORIO/main/escuelas.json";
 
-const groupSelect = document.getElementById("group");
-const fileInput = document.getElementById("fileInput");
-const dropzone = document.getElementById("dropzone");
-const fileInfo = document.getElementById("fileInfo");
-const submitBtn = document.getElementById("submitBtn");
-const form = document.getElementById("uploadForm");
-const statusEl = document.getElementById("status");
-const studentNameInput = document.getElementById("studentName");
+// Cada parte pesa 20 MB antes de convertirla a Base64.
+const CHUNK_SIZE = 20 * 1024 * 1024;
 
-// Llenar el select de grupos
-Object.keys(GROUPS).forEach((name) => {
-  const opt = document.createElement("option");
-  opt.value = name;
-  opt.textContent = name;
-  groupSelect.appendChild(opt);
-});
+let escuelas = {};
+let uploading = false;
 
-// Mostrar info del archivo seleccionado
-function showFileInfo(file) {
-  if (!file) {
-    fileInfo.classList.add("hidden");
-    submitBtn.disabled = true;
-    return;
-  }
-  const sizeMB = (file.size / (1024 * 1024)).toFixed(2);
-  fileInfo.innerHTML = `
-    <span class="name" title="${file.name}">${file.name}</span>
-    <span class="size">${sizeMB} MB</span>
-    <button type="button" class="remove" title="Quitar archivo" aria-label="Quitar">×</button>
-  `;
-  fileInfo.classList.remove("hidden");
-  submitBtn.disabled = !groupSelect.value;
+const $ = (id) => document.getElementById(id);
 
-  fileInfo.querySelector(".remove").addEventListener("click", () => {
-    fileInput.value = "";
-    showFileInfo(null);
-  });
+function setStatus(message, type = "info") {
+  const status = $("status");
+  if (!status) return;
+
+  status.textContent = message;
+  status.dataset.type = type;
 }
 
-fileInput.addEventListener("change", () => {
-  showFileInfo(fileInput.files[0] || null);
-});
+function crearCampoSiNoExiste(id, labelText, type = "text") {
+  let campo = $(id);
+  if (campo) return campo;
 
-groupSelect.addEventListener("change", () => {
-  submitBtn.disabled = !(groupSelect.value && fileInput.files[0]);
-});
-
-// Drag & drop
-["dragenter", "dragover"].forEach((ev) => {
-  dropzone.addEventListener(ev, (e) => {
-    e.preventDefault();
-    dropzone.classList.add("dragover");
-  });
-});
-["dragleave", "drop"].forEach((ev) => {
-  dropzone.addEventListener(ev, (e) => {
-    e.preventDefault();
-    dropzone.classList.remove("dragover");
-  });
-});
-dropzone.addEventListener("drop", (e) => {
-  const files = e.dataTransfer.files;
-  if (files.length) {
-    fileInput.files = files;
-    showFileInfo(files[0]);
+  const form = $("uploadForm");
+  if (!form) {
+    throw new Error("No se encontró el formulario uploadForm.");
   }
-});
 
-// ---------- Subida ----------
+  const wrapper = document.createElement("div");
+  wrapper.style.marginBottom = "12px";
 
-function setStatus(type, message) {
-  statusEl.className = `status ${type}`;
-  statusEl.innerHTML = message;
-  statusEl.classList.remove("hidden");
-}
+  const label = document.createElement("label");
+  label.htmlFor = id;
+  label.textContent = labelText;
+  label.style.display = "block";
+  label.style.marginBottom = "5px";
 
-function setLoading(loading) {
-  const btnText = submitBtn.querySelector(".btn-text");
-  const btnLoading = submitBtn.querySelector(".btn-loading");
-  if (loading) {
-    btnText.classList.add("hidden");
-    btnLoading.classList.remove("hidden");
-    submitBtn.disabled = true;
+  campo = document.createElement(type === "select" ? "select" : "input");
+  campo.id = id;
+  campo.name = id;
+
+  if (type !== "select") {
+    campo.type = type;
+  }
+
+  campo.style.width = "100%";
+  campo.style.boxSizing = "border-box";
+  campo.style.padding = "10px";
+
+  wrapper.append(label, campo);
+
+  const group = $("group");
+  if (group && group.parentElement) {
+    group.parentElement.before(wrapper);
   } else {
-    btnText.classList.remove("hidden");
-    btnLoading.classList.add("hidden");
-    submitBtn.disabled = !(groupSelect.value && fileInput.files[0]);
+    form.prepend(wrapper);
+  }
+
+  return campo;
+}
+
+function prepararInterfaz() {
+  crearCampoSiNoExiste("school", "Escuela", "select");
+  crearCampoSiNoExiste("schoolKey", "Clave de la escuela (si corresponde)", "password");
+
+  let progress = $("uploadProgress");
+  if (!progress) {
+    progress = document.createElement("progress");
+    progress.id = "uploadProgress";
+    progress.max = 100;
+    progress.value = 0;
+    progress.style.display = "block";
+    progress.style.width = "100%";
+    progress.style.marginTop = "10px";
+
+    const status = $("status");
+    if (status) {
+      status.after(progress);
+    } else {
+      $("uploadForm")?.append(progress);
+    }
+  }
+
+  let progressText = $("progressText");
+  if (!progressText) {
+    progressText = document.createElement("p");
+    progressText.id = "progressText";
+    progressText.textContent = "0 %";
+
+    progress.insertAdjacentElement("afterend", progressText);
+  }
+
+  $("school").addEventListener("change", actualizarGrupos);
+}
+
+async function cargarEscuelas() {
+  const respuesta = await fetch(DATABASE_URL, {
+    cache: "no-store"
+  });
+
+  if (!respuesta.ok) {
+    throw new Error("No se pudo cargar escuelas.json desde GitHub.");
+  }
+
+  const baseDatos = await respuesta.json();
+
+  if (!baseDatos.escuelas || typeof baseDatos.escuelas !== "object") {
+    throw new Error("El archivo JSON no contiene el objeto escuelas.");
+  }
+
+  escuelas = baseDatos.escuelas;
+
+  const schoolSelect = $("school");
+  schoolSelect.replaceChildren();
+
+  const opcionInicial = document.createElement("option");
+  opcionInicial.value = "";
+  opcionInicial.textContent = "Selecciona tu escuela";
+  schoolSelect.append(opcionInicial);
+
+  for (const [codigo, escuela] of Object.entries(escuelas)) {
+    const opcion = document.createElement("option");
+    opcion.value = codigo;
+    opcion.textContent = escuela.nombre || codigo;
+    schoolSelect.append(opcion);
+  }
+
+  actualizarGrupos();
+}
+
+function actualizarGrupos() {
+  const schoolCode = $("school").value;
+  const groupSelect = $("group");
+
+  if (!groupSelect) {
+    setStatus("No se encontró el selector de grupo.", "error");
+    return;
+  }
+
+  groupSelect.replaceChildren();
+
+  const opcionInicial = document.createElement("option");
+  opcionInicial.value = "";
+  opcionInicial.textContent = "Selecciona tu grupo";
+  groupSelect.append(opcionInicial);
+
+  const escuela = escuelas[schoolCode];
+  const grupos = escuela?.grupos || {};
+
+  for (const grupo of Object.keys(grupos)) {
+    const opcion = document.createElement("option");
+    opcion.value = grupo;
+    opcion.textContent = grupo;
+    groupSelect.append(opcion);
+  }
+
+  groupSelect.disabled = Object.keys(grupos).length === 0;
+
+  const keyField = $("schoolKey");
+  keyField.value = "";
+  keyField.required = Boolean(escuela?.clave);
+
+  if (!schoolCode) {
+    setStatus("Selecciona tu escuela para ver los grupos.");
+  } else if (Object.keys(grupos).length === 0) {
+    setStatus("Esta escuela todavía no tiene grupos configurados.", "error");
+  } else {
+    setStatus("Selecciona tu grupo y adjunta tu archivo.");
   }
 }
 
-form.addEventListener("submit", async (e) => {
-  e.preventDefault();
+function validarArchivo(file) {
+  if (!file) {
+    throw new Error("Selecciona un archivo.");
+  }
 
-  if (SCRIPT_URL.includes("PEGAR_AQUI")) {
-    setStatus(
-      "error",
-      "Falta configurar la URL del Apps Script.<br>Abre <code>script.js</code> y pega la URL de tu Web App."
+  if (file.size <= 0) {
+    throw new Error("El archivo está vacío.");
+  }
+
+  const extensionesPermitidas = [
+    "mp4", "mov", "avi", "mkv", "webm",
+    "pdf",
+    "doc", "docx", "xls", "xlsx", "ppt", "pptx",
+    "odt", "ods", "odp",
+    "jpg", "jpeg", "png", "gif", "webp", "bmp"
+  ];
+
+  const nombre = file.name.toLowerCase();
+  const extension = nombre.includes(".")
+    ? nombre.split(".").pop()
+    : "";
+
+  if (!extensionesPermitidas.includes(extension)) {
+    throw new Error(
+      "Formato no permitido. Usa videos, documentos Office, imágenes o PDF."
     );
-    return;
   }
 
-  const group = groupSelect.value;
-  const folderId = GROUPS[group];
-  const file = fileInput.files[0];
-  const studentName = studentNameInput.value.trim();
+  // Límite de tamaño original: 500 MB.
+  const MAX_SIZE = 500 * 1024 * 1024;
 
-  if (!folderId || !file) {
-    setStatus("error", "Selecciona un grupo y un archivo.");
-    return;
+  if (file.size > MAX_SIZE) {
+    throw new Error("El archivo supera el límite de 500 MB.");
+  }
+}
+
+function convertirABase64(arrayBuffer) {
+  const bytes = new Uint8Array(arrayBuffer);
+  let binary = "";
+  const blockSize = 0x8000;
+
+  for (let i = 0; i < bytes.length; i += blockSize) {
+    const bloque = bytes.subarray(i, i + blockSize);
+    binary += String.fromCharCode(...bloque);
   }
 
-  // Límite práctico de Apps Script (~50 MB, usamos 45 por seguridad)
-  if (file.size > 45 * 1024 * 1024) {
-    setStatus("error", "El archivo es demasiado grande (máximo aprox. 45 MB).");
-    return;
+  return btoa(binary);
+}
+
+async function enviarParte({
+  folderId,
+  file,
+  studentName,
+  group,
+  school,
+  partNumber,
+  totalParts,
+  base64
+}) {
+  const extension = file.name.includes(".")
+    ? "." + file.name.split(".").pop()
+    : "";
+
+  const nombreBase = extension
+    ? file.name.slice(0, -extension.length)
+    : file.name;
+
+  const numero = String(partNumber).padStart(
+    String(totalParts).length,
+    "0"
+  );
+
+  const nombreParte =
+    `${nombreBase}.parte-${numero}-de-${totalParts}${extension}`;
+
+  const payload = {
+    folderId,
+    fileName: nombreParte,
+    originalFileName: file.name,
+    mimeType: file.type || "application/octet-stream",
+    data: base64,
+    studentName,
+    group,
+    school,
+    partNumber,
+    totalParts
+  };
+
+  const respuesta = await fetch(SCRIPT_URL, {
+    method: "POST",
+    headers: {
+      "Content-Type": "text/plain;charset=utf-8"
+    },
+    body: JSON.stringify(payload)
+  });
+
+  if (!respuesta.ok) {
+    throw new Error(`Error del servidor HTTP ${respuesta.status}.`);
   }
 
-  setLoading(true);
-  setStatus("inf
-... 
+  const texto = await respuesta.text();
+
+  let resultado;
+  try {
+    resultado = JSON.parse(texto);
+  } catch {
+    throw new Error(
+      "El servidor no devolvió una respuesta JSON válida. Verifica la implementación de Apps Script."
+    );
+  }
+
+  if (resultado.success === false || resultado.error) {
+    throw new Error(resultado.error || "No se pudo guardar una parte.");
+  }
+
+  return resultado;
+}
+
+async function subirArchivo() {
+  if (uploading) return;
+
+  const form = $("uploadForm");
+  const submitBtn = $("submitBtn");
+  const fileInput = $("fileInput");
+  const studentName = $("studentName")?.value.trim();
+  const schoolCode = $("school")?.value;
+  const group = $("group")?.value;
+  const file = fileInput?.files?.[0];
+
+  try {
+    const escuela = escuelas[schoolCode];
+
+    if (!escuela) {
+      throw new Error("Selecciona una escuela válida.");
+    }
+
+    if (escuela.clave) {
+      const claveIngresada = $("schoolKey").value;
+
+      if (claveIngresada !== escuela.clave) {
+        throw new Error("La clave de la escuela es incorrecta.");
+      }
+    }
+
+    if (!group || !escuela.grupos[group]) {
+      throw new Error("Selecciona un grupo válido.");
+    }
+
+    if (!studentName) {
+      throw new Error("Escribe el nombre del estudiante.");
+    }
+
+    validarArchivo(file);
+
+    const confirmar = window.confirm(
+      `Eres integrante de ${group} y quieres enviar este documento a Robótica.\n\n` +
+      `Escuela: ${escuela.nombre || schoolCode}\n` +
+      `Estudiante: ${studentName}\n` +
+      `Archivo: ${file.name}\n` +
+      `Tamaño: ${(file.size / (1024 * 1024)).toFixed(2)} MB\n\n` +
+      "¿Deseas continuar?"
+    );
+
+    if (!confirmar) return;
+
+    const folderId = escuela.grupos[group];
+
+    if (!folderId) {
+      throw new Error("El grupo no tiene una carpeta configurada.");
+    }
+
+    uploading = true;
+    if (submitBtn) submitBtn.disabled = true;
+    if (form) form.setAttribute("aria-busy", "true");
+
+    const progress = $("uploadProgress");
+    const progressText = $("progressText");
+
+    progress.value = 0;
+    progressText.textContent = "Preparando archivo: 0 %";
+
+    const totalParts = Math.ceil(file.size / CHUNK_SIZE);
+
+    setStatus(
+      `Iniciando envío de ${totalParts} parte(s). No cierres esta página.`
+    );
+
+    for (let i = 0; i < totalParts; i++) {
+      const inicio = i * CHUNK_SIZE;
+      const fin = Math.min(inicio + CHUNK_SIZE, file.size);
+      const fragmento = file.slice(inicio, fin);
+
+      setStatus(`Procesando parte ${i + 1} de ${totalParts}...`);
+
+      const arrayBuffer = await fragmento.arrayBuffer();
+      const base64 = convertirABase64(arrayBuffer);
+
+      await enviarParte({
+        folderId,
+        file,
+        studentName,
+        group,
+        school: schoolCode,
+        partNumber: i + 1,
+        totalParts,
+        base64
+      });
+
+      const porcentaje = Math.round(((i + 1) / totalParts) * 100);
+      progress.value = porcentaje;
+      progressText.textContent =
+        `Subido: ${porcentaje} % — parte ${i + 1} de ${totalParts}`;
+
+      setStatus(`Parte ${i + 1} de ${totalParts} guardada.`);
+    }
+
+    setStatus(
+      `Archivo enviado correctamente. Se guardaron ${totalParts} parte(s) en Google Drive.`,
+      "success"
+    );
+
+    progress.value = 100;
+    progressText.textContent = "Carga completada: 100 %";
+
+    if (form) form.reset();
+
+    actualizarGrupos();
+    if (fileInput) fileInput.value = "";
+
+  } catch (error) {
+    console.error(error);
+
+    setStatus(
+      `No se pudo completar el envío: ${error.message}. Si lo intentas nuevamente, podrían volver a subirse las partes anteriores.`,
+      "error"
+    );
+
+  } finally {
+    uploading = false;
+    if (submitBtn) submitBtn.disabled = false;
+    if (form) form.removeAttribute("aria-busy");
+  }
+}
+
+document.addEventListener("DOMContentLoaded", async () => {
+  try {
+    prepararInterfaz();
+
+    const form = $("uploadForm");
+
+    if (!form) {
+      throw new Error("No se encontró el formulario uploadForm.");
+    }
+
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      await subirArchivo();
+    });
+
+    await cargarEscuelas();
+
+  } catch (error) {
+    console.error(error);
+    setStatus(`Error al iniciar el sistema: ${error.message}`, "error");
+  }
+});
