@@ -1,0 +1,26 @@
+
+{
+  "escuelas": {
+    "EBP": {
+      "nombre": "EBP",
+      "clave": "",
+      "grupos": {
+        "4 grado": "1bzGqNBcVxNw-biWlALLJS0a_OM8rKIyo",
+        "5 grado": "1VsHanCmNJlVJ7GHUjFZa7aQwd9EJKl1s",
+        "6A": "16J1heTDXLJ8DKS_cYwq3GsJv-bi8RzE_",
+        "6B": "1mi5zb7wYK0BsPSppKU-OhdqbLZjc1fhN",
+        "7A": "1fD88gVed10ZJ6RcopQnRIIrFuYZUL34b",
+        "7B": "1J0-e6Y1LQ4QTrSZnQriOAE1O2YAhzYNb",
+        "8A": "1WntiALNe3Y2BzyDRLS7ZLiRqztjl10Ol",
+        "8B": "1e53gZhJ9TWUewx6_vaTV-PCno7pNGZAQ",
+        "9A": "1fZuwly-vGX5lzqNyOYjqQxJemKdIKzbg",
+        "9B": "1cN1YunYuwwr8J_IgqPEmiR5yq3-pdvjr"
+      }
+    },
+    "Rubiano": {
+      "nombre": "Rubiano",
+      "clave": "",
+      "grupos": {}
+    }
+  }
+}
