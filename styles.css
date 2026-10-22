@@ -1,3 +1,4 @@
+
 /* Reset y base */
 *, *::before, *::after {
   box-sizing: border-box;
@@ -16,9 +17,11 @@
   --success: #16a34a;
   --error: #dc2626;
   --radius: 12px;
-  --shadow: 0 4px 6px -1px rgb(0 0 0 / 0.07), 0 2px 4px -2px rgb(0 0 0 / 0.05);
+  --shadow: 0 4px 6px -1px rgb(0 0 0 / 0.07),
+            0 2px 4px -2px rgb(0 0 0 / 0.05);
 }
 
+/* Base */
 body {
   font-family: 'Inter', system-ui, -apple-system, sans-serif;
   background: var(--bg);
@@ -32,6 +35,11 @@ body {
   max-width: 480px;
   margin: 0 auto;
   padding: 2rem 1.25rem 3rem;
+}
+
+/* Ocultar elementos */
+.hidden {
+  display: none !important;
 }
 
 /* Header */
@@ -66,7 +74,7 @@ h1 {
   border: 1px solid var(--border);
 }
 
-/* Form */
+/* Formulario */
 .form-group {
   margin-bottom: 1.35rem;
 }
@@ -85,8 +93,10 @@ label {
   font-size: 0.85em;
 }
 
+/* Campos de texto, clave y selectores */
 select,
-input[type="text"] {
+input[type="text"],
+input[type="password"] {
   width: 100%;
   padding: 0.7rem 0.9rem;
   border: 1px solid var(--border);
@@ -99,10 +109,18 @@ input[type="text"] {
 }
 
 select:focus,
-input[type="text"]:focus {
+input[type="text"]:focus,
+input[type="password"]:focus {
   outline: none;
   border-color: var(--primary);
   box-shadow: 0 0 0 3px rgb(37 99 235 / 0.15);
+}
+
+select:disabled,
+input:disabled {
+  background: #f1f5f9;
+  color: var(--text-muted);
+  cursor: not-allowed;
 }
 
 /* Dropzone */
@@ -132,6 +150,10 @@ input[type="text"]:focus {
   height: 100%;
 }
 
+.dropzone-content {
+  pointer-events: none;
+}
+
 .dropzone-content .icon {
   font-size: 2rem;
   margin-bottom: 0.5rem;
@@ -148,7 +170,7 @@ input[type="text"]:focus {
   margin-top: 0.25rem;
 }
 
-/* File info */
+/* Información del archivo */
 .file-info {
   margin-top: 0.75rem;
   padding: 0.65rem 0.9rem;
@@ -158,6 +180,7 @@ input[type="text"]:focus {
   display: flex;
   align-items: center;
   gap: 0.5rem;
+  overflow-wrap: anywhere;
 }
 
 .file-info .name {
@@ -183,7 +206,7 @@ input[type="text"]:focus {
   line-height: 1;
 }
 
-/* Botón */
+/* Botón principal */
 .btn-primary {
   width: 100%;
   padding: 0.85rem 1.25rem;
@@ -215,6 +238,7 @@ input[type="text"]:focus {
   cursor: not-allowed;
 }
 
+/* Indicador de carga del botón */
 .btn-loading {
   display: inline-flex;
   align-items: center;
@@ -225,19 +249,95 @@ input[type="text"]:focus {
   content: "";
   width: 16px;
   height: 16px;
-  border: 2px solid rgba(255,255,255,0.3);
+  border: 2px solid rgba(255, 255, 255, 0.3);
   border-top-color: white;
   border-radius: 50%;
   animation: spin 0.7s linear infinite;
 }
 
 @keyframes spin {
-  to { transform: rotate(360deg); }
+  to {
+    transform: rotate(360deg);
+  }
 }
 
-/* Status messages */
+/* Barra de progreso */
+#uploadProgress {
+  display: block;
+  width: 100%;
+  height: 10px;
+  margin-top: 1.25rem;
+  border: none;
+  border-radius: 10px;
+  overflow: hidden;
+  accent-color: var(--primary);
+}
+
+#progressText {
+  margin-top: 0.5rem;
+  text-align: center;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}
+
+/* Mensajes de estado */
 .status {
   margin-top: 1.25rem;
   padding: 0.9rem 1rem;
-  borde
-... 
+  border-radius: 8px;
+  font-size: 0.9rem;
+  overflow-wrap: anywhere;
+  border: 1px solid transparent;
+}
+
+.status[data-type="info"] {
+  color: #1d4ed8;
+  background: #eff6ff;
+  border-color: #bfdbfe;
+}
+
+.status[data-type="success"] {
+  color: #166534;
+  background: #f0fdf4;
+  border-color: #bbf7d0;
+}
+
+.status[data-type="error"] {
+  color: #991b1b;
+  background: #fef2f2;
+  border-color: #fecaca;
+}
+
+/* Footer */
+footer {
+  margin-top: 1.5rem;
+  text-align: center;
+}
+
+footer p {
+  color: var(--text-muted);
+  font-size: 0.8rem;
+}
+
+/* Adaptación para celulares */
+@media (max-width: 480px) {
+  .container {
+    padding: 1.25rem 0.85rem 2rem;
+  }
+
+  .card {
+    padding: 1.25rem;
+  }
+
+  h1 {
+    font-size: 1.5rem;
+  }
+
+  .subtitle {
+    font-size: 0.9rem;
+  }
+
+  .dropzone {
+    padding: 1.5rem 0.75rem;
+  }
+}
