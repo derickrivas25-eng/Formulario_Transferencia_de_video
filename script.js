@@ -2,16 +2,43 @@
 const SCRIPT_URL =
   "https://script.google.com/macros/s/AKfycbx5wwASuQDPJi5PcMEj7Ud1pryVcivNBIBnDxH5vRZ0qSzeGfGBdM2z7tGuL9SE9Ha3/exec";
 
+const DATABASE_URL =
+  "https://raw.githubusercontent.com/derickrivas25-eng/Formulario_Transferencia_de_video/principal/escuelas.json";
 
-const DATABASE_URL = "https://raw.githubusercontent.com/derickrivas25-eng/Formulario_Transferencia_de_video/principal/escuelas.json"
-//fetch('./escuelas.json'); // Esto es una ruta relativa 
+// =========================================================
+// INICIO: DATOS PROVISIONALES DE ESCUELAS
+// ELIMINAR ESTE BLOQUE CUANDO escuelas.json FUNCIONE
+// =========================================================
 
+const ESCUELAS_PROVISIONALES = {
+  EBP: {
+    nombre: "EBP",
+    clave: "",
+    grupos: {
+      "4 grado": "1bzGqNBcVxNw-biWlALLJS0a_OM8rKIyo",
+      "5 grado": "1VsHanCmNJlVJ7GHUjFZa7aQwd9EJKl1s",
+      "6A": "16J1heTDXLJ8DKS_cYwq3GsJv-bi8RzE_",
+      "6B": "1mi5zb7wYK0BsPSppKU-OhdqbLZjc1fhN",
+      "7A": "1fD88gVed10ZJ6RcopQnRIIrFuYZUL34b",
+      "7B": "1J0-e6Y1LQ4QTrSZnQriOAE1O2YAhzYNb",
+      "8A": "1WntiALNe3Y2BzyDRLS7ZLiRqztjl10Ol",
+      "8B": "1e53gZhJ9TWUewx6_vaTV-PCno7pNGZAQ",
+      "9A": "1fZuwly-vGX5lzqNyOYjqQxJemKdIKzbg",
+      "9B": "1cN1YunYuwwr8J_IgqPEmiR5yq3-pdvjr"
+    }
+  }
+};
+
+// =========================================================
+// FIN: DATOS PROVISIONALES DE ESCUELAS
+// =========================================================
 
 const CHUNK_SIZE = 20 * 1024 * 1024;
 const MAX_SIZE = 500 * 1024 * 1024;
 
 let escuelas = {};
 let uploading = false;
+let usandoProvisionales = false;
 
 const $ = (id) => document.getElementById(id);
 
@@ -44,6 +71,7 @@ function actualizarBoton() {
   const clave = $("schoolKey").value;
 
   const requiereClave = Boolean(escuela?.clave);
+
   const claveCorrecta =
     !requiereClave || clave === escuela.clave;
 
@@ -62,26 +90,54 @@ function actualizarBoton() {
 }
 
 async function cargarEscuelas() {
-  const respuesta = await fetch(DATABASE_URL, {
-    cache: "no-store"
-  });
+  usandoProvisionales = false;
 
-  if (!respuesta.ok) {
-    throw new Error(
-      "No se pudo cargar escuelas.json desde GitHub."
+  try {
+    const respuesta = await fetch(DATABASE_URL, {
+      cache: "no-store"
+    });
+
+    if (!respuesta.ok) {
+      throw new Error(
+        "No se pudo cargar escuelas.json desde GitHub."
+      );
+    }
+
+    const datos = await respuesta.json();
+
+    if (
+      !datos.escuelas ||
+      typeof datos.escuelas !== "object" ||
+      Array.isArray(datos.escuelas)
+    ) {
+      throw new Error(
+        "El JSON debe contener el objeto 'escuelas'."
+      );
+    }
+
+    escuelas = datos.escuelas;
+
+  } catch (error) {
+
+    // =====================================================
+    // INICIO: ACTIVACIÓN DE DATOS PROVISIONALES
+    // ELIMINAR CUANDO SE SOLUCIONE LA CARGA DEL JSON
+    // =====================================================
+
+    console.warn(
+      "Falló la carga del JSON. Se utilizarán los datos provisionales.",
+      error
     );
+
+    escuelas = ESCUELAS_PROVISIONALES;
+    usandoProvisionales = true;
+
+    // =====================================================
+    // FIN: ACTIVACIÓN DE DATOS PROVISIONALES
+    // =====================================================
   }
 
-  const datos = await respuesta.json();
-
-  if (!datos.escuelas || typeof datos.escuelas !== "object") {
-    throw new Error(
-      "El JSON debe contener el objeto 'escuelas'."
-    );
-  }
-
-  escuelas = datos.escuelas;
-
+  // Cargar las escuelas en el selector.
   const selector = $("school");
   selector.replaceChildren();
 
@@ -90,6 +146,7 @@ async function cargarEscuelas() {
   inicial.textContent = "Selecciona tu escuela…";
   inicial.disabled = true;
   inicial.selected = true;
+
   selector.appendChild(inicial);
 
   for (const [codigo, escuela] of Object.entries(escuelas)) {
@@ -102,6 +159,13 @@ async function cargarEscuelas() {
   }
 
   actualizarGrupos();
+
+  if (usandoProvisionales) {
+    setStatus(
+      "Modo provisional activo: se están utilizando los datos de EBP guardados en el JavaScript.",
+      "info"
+    );
+  }
 }
 
 function actualizarGrupos() {
@@ -145,11 +209,13 @@ function actualizarGrupos() {
 
   if (!codigo) {
     setStatus("Selecciona tu escuela.", "info");
+
   } else if (Object.keys(grupos).length === 0) {
     setStatus(
       "Esta escuela todavía no tiene grupos configurados.",
       "error"
     );
+
   } else {
     setStatus(
       requiereClave
@@ -183,12 +249,15 @@ function validarArchivo(archivo) {
   ];
 
   const nombre = archivo.name.toLowerCase();
+
   const extension = nombre.includes(".")
     ? nombre.split(".").pop()
     : "";
 
   if (!extensiones.includes(extension)) {
-    throw new Error("El formato del archivo no está permitido.");
+    throw new Error(
+      "El formato del archivo no está permitido."
+    );
   }
 }
 
@@ -218,10 +287,16 @@ async function enviarParte(datos) {
   } = datos;
 
   const punto = archivo.name.lastIndexOf(".");
+
   const nombreBase =
-    punto > 0 ? archivo.name.slice(0, punto) : archivo.name;
+    punto > 0
+      ? archivo.name.slice(0, punto)
+      : archivo.name;
+
   const extension =
-    punto > 0 ? archivo.name.slice(punto) : "";
+    punto > 0
+      ? archivo.name.slice(punto)
+      : "";
 
   const numero = String(numeroParte).padStart(
     String(totalPartes).length,
@@ -269,7 +344,9 @@ async function enviarParte(datos) {
   }
 
   if (resultado.success === false || resultado.error) {
-    throw new Error(resultado.error || "No se pudo guardar la parte.");
+    throw new Error(
+      resultado.error || "No se pudo guardar la parte."
+    );
   }
 
   return resultado;
@@ -318,20 +395,38 @@ async function subirArchivo(event) {
     uploading = true;
 
     $("submitBtn").disabled = true;
-    $("submitBtn").querySelector(".btn-text").classList.add("hidden");
-    $("submitBtn").querySelector(".btn-loading").classList.remove("hidden");
 
-    const totalPartes = Math.ceil(archivo.size / CHUNK_SIZE);
+    $("submitBtn")
+      .querySelector(".btn-text")
+      .classList.add("hidden");
+
+    $("submitBtn")
+      .querySelector(".btn-loading")
+      .classList.remove("hidden");
+
+    const totalPartes = Math.ceil(
+      archivo.size / CHUNK_SIZE
+    );
 
     setProgress(0, "Preparando archivo: 0 %");
-    setStatus(`Iniciando envío de ${totalPartes} parte(s).`);
+
+    setStatus(
+      `Iniciando envío de ${totalPartes} parte(s).`
+    );
 
     for (let i = 0; i < totalPartes; i++) {
       const inicio = i * CHUNK_SIZE;
-      const fin = Math.min(inicio + CHUNK_SIZE, archivo.size);
+
+      const fin = Math.min(
+        inicio + CHUNK_SIZE,
+        archivo.size
+      );
+
       const fragmento = archivo.slice(inicio, fin);
 
-      setStatus(`Procesando parte ${i + 1} de ${totalPartes}…`);
+      setStatus(
+        `Procesando parte ${i + 1} de ${totalPartes}…`
+      );
 
       const buffer = await fragmento.arrayBuffer();
       const base64 = convertirABase64(buffer);
@@ -363,11 +458,21 @@ async function subirArchivo(event) {
     );
 
     $("uploadForm").reset();
+
     $("fileInfo").textContent = "";
     $("fileInfo").classList.add("hidden");
 
     actualizarGrupos();
-    setProgress(0, "Carga completada: 100 %");
+
+    setProgress(100, "Carga completada: 100 %");
+
+    // Si se usan datos provisionales, conservar el aviso
+    // al finalizar la carga, sin interferir con el éxito.
+    console.info(
+      usandoProvisionales
+        ? "La aplicación continúa usando los datos provisionales de EBP."
+        : "Las escuelas se cargaron desde el JSON."
+    );
 
   } catch (error) {
     console.error(error);
@@ -380,18 +485,38 @@ async function subirArchivo(event) {
   } finally {
     uploading = false;
 
-    $("submitBtn").querySelector(".btn-text").classList.remove("hidden");
-    $("submitBtn").querySelector(".btn-loading").classList.add("hidden");
+    $("submitBtn")
+      .querySelector(".btn-text")
+      .classList.remove("hidden");
+
+    $("submitBtn")
+      .querySelector(".btn-loading")
+      .classList.add("hidden");
 
     actualizarBoton();
   }
 }
 
 function configurarEventos() {
-  $("school").addEventListener("change", actualizarGrupos);
-  $("group").addEventListener("change", actualizarBoton);
-  $("schoolKey").addEventListener("input", actualizarBoton);
-  $("studentName").addEventListener("input", actualizarBoton);
+  $("school").addEventListener(
+    "change",
+    actualizarGrupos
+  );
+
+  $("group").addEventListener(
+    "change",
+    actualizarBoton
+  );
+
+  $("schoolKey").addEventListener(
+    "input",
+    actualizarBoton
+  );
+
+  $("studentName").addEventListener(
+    "input",
+    actualizarBoton
+  );
 
   $("fileInput").addEventListener("change", () => {
     const archivo = $("fileInput").files[0];
@@ -400,7 +525,9 @@ function configurarEventos() {
     if (archivo) {
       info.textContent =
         `${archivo.name} (${(archivo.size / (1024 * 1024)).toFixed(2)} MB)`;
+
       info.classList.remove("hidden");
+
     } else {
       info.textContent = "";
       info.classList.add("hidden");
@@ -409,7 +536,10 @@ function configurarEventos() {
     actualizarBoton();
   });
 
-  $("uploadForm").addEventListener("submit", subirArchivo);
+  $("uploadForm").addEventListener(
+    "submit",
+    subirArchivo
+  );
 }
 
 document.addEventListener("DOMContentLoaded", async () => {
@@ -417,8 +547,14 @@ document.addEventListener("DOMContentLoaded", async () => {
 
   try {
     await cargarEscuelas();
+
   } catch (error) {
     console.error(error);
-    setStatus(`Error al iniciar: ${error.message}`, "error");
+
+    setStatus(
+      `Error al iniciar: ${error.message}`,
+      "error"
+    );
   }
 });
+
