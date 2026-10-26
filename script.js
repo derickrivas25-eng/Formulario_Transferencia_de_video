@@ -1,17 +1,16 @@
 
 const SCRIPT_URL =
-  "https://script.google.com/macros/s/AKfycbwAjrXHiKijLoEc88WTSuyBri5BZ8N7hp-yBGXI3Hn4KPp7q6gTZWN9Df4Y2yiLAi5o/exec" ;
-  //"https://script.google.com/macros/s/AKfycbx5wwASuQDPJi5PcMEj7Ud1pryVcivNBIBnDxH5vRZ0qSzeGfGBdM2z7tGuL9SE9Ha3/exec";
+  "https://script.google.com/macros/s/AKfycbx5wwASuQDPJi5PcMEj7Ud1pryVcivNBIBnDxH5vRZ0qSzeGfGBdM2z7tGuL9SE9Ha3/exec";
 
-// 5 MiB por parte. Es múltiplo de 256 KiB, requisito de Drive
-// para las partes intermedias de una carga reanudable.
-const CHUNK_SIZE = 5 * 1024 * 1024;
-const MAX_SIZE = 500 * 1024 * 1024;
+// =========================================================
+// DATOS FIJOS DE ESCUELAS
+// NO SE CONSULTA NINGÚN ARCHIVO JSON
+// =========================================================
 
 const ESCUELAS = {
   EBP: {
     nombre: "EBP",
-    requiereClave: false,
+    clave: "",
     grupos: {
       "4 grado": "1bzGqNBcVxNw-biWlALLJS0a_OM8rKIyo",
       "5 grado": "1VsHanCmNJlVJ7GHUjFZa7aQwd9EJKl1s",
@@ -27,336 +26,515 @@ const ESCUELAS = {
   }
 };
 
-const formulario = document.getElementById("uploadForm");
-const campoEscuela = document.getElementById("school");
-const campoGrupo = document.getElementById("group");
-const campoClave = document.getElementById("schoolKey");
-const grupoClave = document.getElementById("schoolKeyGroup");
-const campoEstudiante = document.getElementById("studentName");
-const campoArchivo = document.getElementById("fileInput");
-const botonEnviar = document.getElementById("submitBtn");
-const estado = document.getElementById("status");
-const progreso = document.getElementById("uploadProgress");
-const textoProgreso = document.getElementById("progressText");
-const informacionArchivo = document.getElementById("fileInfo");
+// =========================================================
+// CONFIGURACIÓN DE ARCHIVOS
+// =========================================================
 
-let subiendo = false;
+const CHUNK_SIZE = 20 * 1024 * 1024;
+const MAX_SIZE = 500 * 1024 * 1024;
 
-function mostrarEstado(mensaje, tipo = "") {
-  if (!estado) return;
+let escuelas = ESCUELAS;
+let uploading = false;
 
-  estado.textContent = mensaje;
-  estado.className = tipo;
+const $ = (id) => document.getElementById(id);
+
+// =========================================================
+// MENSAJES
+// =========================================================
+
+function setStatus(message, type = "info") {
+  const status = $("status");
+
+  status.textContent = message;
+  status.classList.remove("hidden");
+  status.dataset.type = type;
 }
 
-function actualizarProgreso(porcentaje, mensaje) {
-  if (progreso) {
-    progreso.value = porcentaje;
-    progreso.max = 100;
+function setProgress(value, message) {
+  const progress = $("uploadProgress");
+  const progressText = $("progressText");
+
+  progress.classList.remove("hidden");
+  progressText.classList.remove("hidden");
+
+  progress.value = value;
+  progressText.textContent = message;
+}
+
+// =========================================================
+// ACTUALIZAR BOTÓN DE ENVÍO
+// =========================================================
+
+function actualizarBoton() {
+  if (uploading) return;
+
+  const escuela = escuelas[$("school").value];
+  const grupo = $("group").value;
+  const archivo = $("fileInput").files[0];
+  const nombre = $("studentName").value.trim();
+  const clave = $("schoolKey").value;
+
+  const requiereClave = Boolean(escuela?.clave);
+
+  const claveCorrecta =
+    !requiereClave || clave === escuela.clave;
+
+  const grupoValido =
+    Boolean(escuela && grupo && escuela.grupos?.[grupo]);
+
+  $("submitBtn").disabled = !(
+    escuela &&
+    grupoValido &&
+    archivo &&
+    claveCorrecta
+  );
+
+  // El nombre del estudiante es opcional.
+  void nombre;
+}
+
+// =========================================================
+// CARGAR ESCUELAS DESDE LOS DATOS FIJOS
+// =========================================================
+
+function cargarEscuelas() {
+  escuelas = ESCUELAS;
+
+  const selector = $("school");
+  selector.replaceChildren();
+
+  const inicial = document.createElement("option");
+  inicial.value = "";
+  inicial.textContent = "Selecciona tu escuela…";
+  inicial.disabled = true;
+  inicial.selected = true;
+
+  selector.appendChild(inicial);
+
+  for (const [codigo, escuela] of Object.entries(escuelas)) {
+    const opcion = document.createElement("option");
+
+    opcion.value = codigo;
+    opcion.textContent = escuela.nombre || codigo;
+
+    selector.appendChild(opcion);
   }
 
-  if (textoProgreso) {
-    textoProgreso.textContent = mensaje;
-  }
+  actualizarGrupos();
+
+  setStatus(
+    "Aplicación iniciada usando datos fijos.",
+    "info"
+  );
 }
 
-function cambiarEstadoBoton(cargando) {
-  if (!botonEnviar) return;
-
-  botonEnviar.disabled = cargando;
-
-  const texto = botonEnviar.querySelector(".btn-text");
-  const indicador = botonEnviar.querySelector(".btn-loading");
-
-  if (texto) texto.classList.toggle("hidden", cargando);
-  if (indicador) indicador.classList.toggle("hidden", !cargando);
-}
-
-function obtenerConfiguracionEscuela() {
-  const valor = campoEscuela?.value || "";
-  return ESCUELAS[valor] || null;
-}
+// =========================================================
+// ACTUALIZAR GRUPOS
+// =========================================================
 
 function actualizarGrupos() {
-  if (!campoEscuela || !campoGrupo) return;
+  const codigo = $("school").value;
+  const escuela = escuelas[codigo];
 
-  const configuracion = obtenerConfiguracionEscuela();
-  const grupoAnterior = campoGrupo.value;
+  const selectorGrupo = $("group");
+  const selectorClave = $("schoolKey");
+  const grupoClave = $("schoolKeyGroup");
 
-  campoGrupo.innerHTML = "";
-
-  if (!configuracion) {
-    campoGrupo.add(new Option("Selecciona primero una escuela", ""));
-    campoGrupo.disabled = true;
-    return;
-  }
-
-  campoGrupo.disabled = false;
-  campoGrupo.add(new Option("Selecciona tu grado", ""));
-
-  for (const nombreGrupo of Object.keys(configuracion.grupos)) {
-    campoGrupo.add(new Option(nombreGrupo, nombreGrupo));
-  }
-
-  if (
-    grupoAnterior &&
-    Object.prototype.hasOwnProperty.call(
-      configuracion.grupos,
-      grupoAnterior
-    )
-  ) {
-    campoGrupo.value = grupoAnterior;
-  }
-}
-
-function actualizarCampoClave() {
-  if (!grupoClave || !campoClave) return;
-
-  const configuracion = obtenerConfiguracionEscuela();
-  const requiereClave = configuracion?.requiereClave === true;
+  // Mostrar la clave solo si la escuela tiene una configurada.
+  const requiereClave = Boolean(escuela?.clave);
 
   grupoClave.classList.toggle("hidden", !requiereClave);
-  campoClave.required = requiereClave;
+  selectorClave.required = requiereClave;
+  selectorClave.value = "";
 
-  if (!requiereClave) {
-    campoClave.value = "";
+  // Reiniciar los grupos.
+  selectorGrupo.replaceChildren();
+
+  const inicial = document.createElement("option");
+  inicial.value = "";
+  inicial.textContent = "Selecciona tu grupo…";
+  inicial.disabled = true;
+  inicial.selected = true;
+
+  selectorGrupo.appendChild(inicial);
+
+  const grupos = escuela?.grupos || {};
+
+  for (const grupo of Object.keys(grupos)) {
+    const opcion = document.createElement("option");
+
+    opcion.value = grupo;
+    opcion.textContent = grupo;
+
+    selectorGrupo.appendChild(opcion);
   }
+
+  selectorGrupo.disabled = Object.keys(grupos).length === 0;
+
+  if (!codigo) {
+    setStatus("Selecciona tu escuela.", "info");
+
+  } else if (Object.keys(grupos).length === 0) {
+    setStatus(
+      "Esta escuela todavía no tiene grupos configurados.",
+      "error"
+    );
+
+  } else {
+    setStatus(
+      requiereClave
+        ? "Ingresa la clave de la escuela y selecciona tu grupo."
+        : "Selecciona tu grupo y adjunta el archivo.",
+      "info"
+    );
+  }
+
+  actualizarBoton();
 }
 
-function mostrarInformacionArchivo() {
-  if (!campoArchivo || !informacionArchivo) return;
+// =========================================================
+// VALIDAR ARCHIVO
+// =========================================================
 
-  const archivo = campoArchivo.files?.[0];
-
+function validarArchivo(archivo) {
   if (!archivo) {
-    informacionArchivo.textContent = "";
-    return;
+    throw new Error("Selecciona un archivo.");
   }
 
-  informacionArchivo.textContent =
-    `${archivo.name} (${formatearBytes(archivo.size)})`;
-}
-
-function formatearBytes(bytes) {
-  if (bytes < 1024 * 1024) {
-    return `${(bytes / 1024).toFixed(1)} KB`;
+  if (archivo.size <= 0) {
+    throw new Error("El archivo está vacío.");
   }
 
-  return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
+  if (archivo.size > MAX_SIZE) {
+    throw new Error("El archivo supera el límite de 500 MB.");
+  }
+
+  const extensiones = [
+    "pdf", "doc", "docx", "xls", "xlsx", "ppt", "pptx",
+    "odt", "ods", "odp",
+    "jpg", "jpeg", "png", "gif", "webp", "bmp",
+    "mp4", "mov", "avi", "mkv", "webm"
+  ];
+
+  const nombre = archivo.name.toLowerCase();
+
+  const extension = nombre.includes(".")
+    ? nombre.split(".").pop()
+    : "";
+
+  if (!extensiones.includes(extension)) {
+    throw new Error(
+      "El formato del archivo no está permitido."
+    );
+  }
 }
 
-function leerParteComoBase64(archivo, inicio, fin) {
-  return new Promise((resolve, reject) => {
-    const lector = new FileReader();
+// =========================================================
+// CONVERTIR A BASE64
+// =========================================================
 
-    lector.onload = () => {
-      const resultado = String(lector.result || "");
-      const separador = resultado.indexOf(",");
+function convertirABase64(arrayBuffer) {
+  const bytes = new Uint8Array(arrayBuffer);
+  let binario = "";
+  const tamanoBloque = 0x8000;
 
-      if (separador === -1) {
-        reject(new Error("No se pudo leer la parte del archivo."));
-        return;
-      }
+  for (let i = 0; i < bytes.length; i += tamanoBloque) {
+    const bloque = bytes.subarray(i, i + tamanoBloque);
+    binario += String.fromCharCode(...bloque);
+  }
 
-      resolve(resultado.slice(separador + 1));
-    };
-
-    lector.onerror = () => {
-      reject(new Error("Error al leer el archivo seleccionado."));
-    };
-
-    lector.readAsDataURL(archivo.slice(inicio, fin));
-  });
+  return btoa(binario);
 }
+
+// =========================================================
+// ENVIAR UNA PARTE AL SERVIDOR
+// =========================================================
 
 async function enviarParte(datos) {
+  const {
+    folderId,
+    archivo,
+    nombreEstudiante,
+    grupo,
+    escuela,
+    numeroParte,
+    totalPartes,
+    base64
+  } = datos;
+
+  const punto = archivo.name.lastIndexOf(".");
+
+  const nombreBase =
+    punto > 0
+      ? archivo.name.slice(0, punto)
+      : archivo.name;
+
+  const extension =
+    punto > 0
+      ? archivo.name.slice(punto)
+      : "";
+
+  const numero = String(numeroParte).padStart(
+    String(totalPartes).length,
+    "0"
+  );
+
+  const nombreParte =
+    `${nombreBase}.parte-${numero}-de-${totalPartes}${extension}`;
+
+  const payload = {
+    folderId,
+    fileName: nombreParte,
+    originalFileName: archivo.name,
+    mimeType: archivo.type || "application/octet-stream",
+    data: base64,
+    studentName: nombreEstudiante,
+    group: grupo,
+    school: escuela,
+    partNumber: numeroParte,
+    totalParts: totalPartes,
+
+    // Datos necesarios para la carga reanudable.
+    uploadId: datos.uploadId,
+    fileSize: datos.fileSize
+  };
+
   const respuesta = await fetch(SCRIPT_URL, {
     method: "POST",
     headers: {
       "Content-Type": "text/plain;charset=utf-8"
     },
-    body: JSON.stringify(datos),
-    redirect: "follow"
+    body: JSON.stringify(payload)
   });
 
   if (!respuesta.ok) {
     throw new Error(`Error HTTP ${respuesta.status}.`);
   }
 
+  const texto = await respuesta.text();
+
   let resultado;
 
   try {
-    resultado = await respuesta.json();
+    resultado = JSON.parse(texto);
   } catch {
     throw new Error(
-      "El servidor no devolvió JSON. Revisa la implementación de Apps Script."
+      "El servidor no devolvió JSON. Revisa Code.gs y la implementación."
     );
   }
 
-  if (!resultado.success) {
-    throw new Error(resultado.message || "Falló la carga del archivo.");
+  if (resultado.success === false || resultado.error) {
+    throw new Error(
+      resultado.error || "No se pudo guardar la parte."
+    );
   }
 
   return resultado;
 }
 
-async function subirArchivo() {
-  if (subiendo) return;
+// =========================================================
+// SUBIR ARCHIVO
+// =========================================================
 
-  const archivo = campoArchivo?.files?.[0];
-  const configuracion = obtenerConfiguracionEscuela();
-  const escuela = campoEscuela?.value || "";
-  const grupo = campoGrupo?.value || "";
-  const estudiante = campoEstudiante?.value?.trim() || "";
-  const clave = campoClave?.value?.trim() || "";
+async function subirArchivo(event) {
+  event.preventDefault();
 
-  if (!formulario?.reportValidity()) return;
+  if (uploading) return;
 
-  if (!archivo) {
-    mostrarEstado("Selecciona un archivo antes de continuar.", "error");
-    return;
-  }
-
-  if (!configuracion) {
-    mostrarEstado("Selecciona una escuela válida.", "error");
-    return;
-  }
-
-  if (!grupo || !configuracion.grupos[grupo]) {
-    mostrarEstado("Selecciona un grado válido.", "error");
-    return;
-  }
-
-  if (!estudiante) {
-    mostrarEstado("Escribe el nombre del estudiante.", "error");
-    return;
-  }
-
-  if (configuracion.requiereClave && !clave) {
-    mostrarEstado("Escribe la clave de la escuela.", "error");
-    return;
-  }
-
-  if (archivo.size <= 0) {
-    mostrarEstado("El archivo está vacío.", "error");
-    return;
-  }
-
-  if (archivo.size > MAX_SIZE) {
-    mostrarEstado("El archivo supera el límite de 500 MB.", "error");
-    return;
-  }
-
-  const folderId = configuracion.grupos[grupo];
-  const totalParts = Math.ceil(archivo.size / CHUNK_SIZE);
-
-  // Identificador único para esta transferencia.
-  const uploadId =
-    `${Date.now()}-${Math.random().toString(36).slice(2)}`;
-
-  subiendo = true;
-  cambiarEstadoBoton(true);
-  mostrarEstado("Preparando la carga...", "info");
-  actualizarProgreso(0, "0 %");
+  const codigoEscuela = $("school").value;
+  const escuela = escuelas[codigoEscuela];
+  const grupo = $("group").value;
+  const nombreEstudiante = $("studentName").value.trim();
+  const archivo = $("fileInput").files[0];
+  const clave = $("schoolKey").value;
 
   try {
-    for (let indice = 0; indice < totalParts; indice++) {
-      const inicio = indice * CHUNK_SIZE;
-      const fin = Math.min(inicio + CHUNK_SIZE, archivo.size);
-
-      mostrarEstado(
-        `Subiendo parte ${indice + 1} de ${totalParts}...`,
-        "info"
-      );
-
-      const base64 = await leerParteComoBase64(archivo, inicio, fin);
-
-      const datos = {
-        uploadId,
-        fileSize: archivo.size,
-        partNumber: indice + 1,
-        totalParts,
-        folderId,
-        originalFileName: archivo.name,
-        mimeType: archivo.type || "application/octet-stream",
-        data: base64,
-        studentName: estudiante,
-        group: grupo,
-        school: escuela
-      };
-
-      const resultado = await enviarParte(datos);
-
-      const porcentaje = Math.round((fin / archivo.size) * 100);
-
-      actualizarProgreso(
-        porcentaje,
-        `${porcentaje} % — parte ${indice + 1} de ${totalParts}`
-      );
-
-      if (indice < totalParts - 1 && resultado.complete) {
-        throw new Error(
-          "Drive indicó que el archivo terminó antes de enviar todas las partes."
-        );
-      }
-
-      if (indice === totalParts - 1 && !resultado.complete) {
-        throw new Error(
-          "Se enviaron todas las partes, pero Drive no confirmó el archivo final."
-        );
-      }
-
-      if (resultado.complete) {
-        mostrarEstado(
-          "Archivo enviado correctamente. Ya está completo en Google Drive.",
-          "success"
-        );
-
-        if (resultado.webViewLink) {
-          const enlace = document.createElement("a");
-          enlace.href = resultado.webViewLink;
-          enlace.target = "_blank";
-          enlace.rel = "noopener noreferrer";
-          enlace.textContent = "Abrir archivo en Google Drive";
-
-          estado?.appendChild(document.createTextNode(" "));
-          estado?.appendChild(enlace);
-        }
-      }
+    if (!escuela) {
+      throw new Error("Selecciona una escuela.");
     }
 
-    actualizarProgreso(100, "100 % — carga completada");
-    formulario.reset();
+    if (!grupo || !escuela.grupos?.[grupo]) {
+      throw new Error("Selecciona un grupo válido.");
+    }
+
+    if (escuela.clave && clave !== escuela.clave) {
+      throw new Error("La clave de la escuela es incorrecta.");
+    }
+
+    validarArchivo(archivo);
+
+    const folderId = escuela.grupos[grupo];
+
+    const confirmar = window.confirm(
+      `Escuela: ${escuela.nombre || codigoEscuela}\n` +
+      `Grupo: ${grupo}\n` +
+      `Estudiante: ${nombreEstudiante || "No especificado"}\n` +
+      `Archivo: ${archivo.name}\n` +
+      `Tamaño: ${(archivo.size / (1024 * 1024)).toFixed(2)} MB\n\n` +
+      "¿Deseas subirlo?"
+    );
+
+    if (!confirmar) return;
+
+    uploading = true;
+
+    $("submitBtn").disabled = true;
+
+    $("submitBtn")
+      .querySelector(".btn-text")
+      .classList.add("hidden");
+
+    $("submitBtn")
+      .querySelector(".btn-loading")
+      .classList.remove("hidden");
+
+    const totalPartes = Math.ceil(
+      archivo.size / CHUNK_SIZE
+    );
+
+    // Identificador único para esta carga.
+    const uploadId =
+      `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+
+    setProgress(0, "Preparando archivo: 0 %");
+
+    setStatus(
+      `Iniciando envío de ${totalPartes} parte(s).`
+    );
+
+    for (let i = 0; i < totalPartes; i++) {
+      const inicio = i * CHUNK_SIZE;
+
+      const fin = Math.min(
+        inicio + CHUNK_SIZE,
+        archivo.size
+      );
+
+      const fragmento = archivo.slice(inicio, fin);
+
+      setStatus(
+        `Procesando parte ${i + 1} de ${totalPartes}…`
+      );
+
+      const buffer = await fragmento.arrayBuffer();
+      const base64 = convertirABase64(buffer);
+
+      await enviarParte({
+        folderId,
+        archivo,
+        nombreEstudiante,
+        grupo,
+        escuela: codigoEscuela,
+        numeroParte: i + 1,
+        totalPartes,
+        base64,
+
+        // Enviar los datos de la carga al servidor.
+        uploadId,
+        fileSize: archivo.size
+      });
+
+      const porcentaje = Math.round(
+        ((i + 1) / totalPartes) * 100
+      );
+
+      setProgress(
+        porcentaje,
+        `Subido: ${porcentaje} % — parte ${i + 1} de ${totalPartes}`
+      );
+    }
+
+    setStatus(
+      `Carga completada. Se guardaron ${totalPartes} parte(s) en Google Drive.`,
+      "success"
+    );
+
+    $("uploadForm").reset();
+
+    $("fileInfo").textContent = "";
+    $("fileInfo").classList.add("hidden");
+
     actualizarGrupos();
-    actualizarCampoClave();
-    mostrarInformacionArchivo();
+
+    setProgress(100, "Carga completada: 100 %");
 
   } catch (error) {
-    mostrarEstado(
-      `No se pudo completar la carga: ${error.message}`,
+    console.error(error);
+
+    setStatus(
+      `No se pudo completar el envío: ${error.message}. Si lo intentas de nuevo, podrían duplicarse las partes que ya se enviaron.`,
       "error"
     );
+
   } finally {
-    subiendo = false;
-    cambiarEstadoBoton(false);
+    uploading = false;
+
+    $("submitBtn")
+      .querySelector(".btn-text")
+      .classList.remove("hidden");
+
+    $("submitBtn")
+      .querySelector(".btn-loading")
+      .classList.add("hidden");
+
+    actualizarBoton();
   }
 }
 
-// Eventos
-campoEscuela?.addEventListener("change", () => {
-  actualizarGrupos();
-  actualizarCampoClave();
+// =========================================================
+// CONFIGURAR EVENTOS
+// =========================================================
+
+function configurarEventos() {
+  $("school").addEventListener(
+    "change",
+    actualizarGrupos
+  );
+
+  $("group").addEventListener(
+    "change",
+    actualizarBoton
+  );
+
+  $("schoolKey").addEventListener(
+    "input",
+    actualizarBoton
+  );
+
+  $("studentName").addEventListener(
+    "input",
+    actualizarBoton
+  );
+
+  $("fileInput").addEventListener("change", () => {
+    const archivo = $("fileInput").files[0];
+    const info = $("fileInfo");
+
+    if (archivo) {
+      info.textContent =
+        `${archivo.name} (${(archivo.size / (1024 * 1024)).toFixed(2)} MB)`;
+
+      info.classList.remove("hidden");
+
+    } else {
+      info.textContent = "";
+      info.classList.add("hidden");
+    }
+
+    actualizarBoton();
+  });
+
+  $("uploadForm").addEventListener(
+    "submit",
+    subirArchivo
+  );
+}
+
+// =========================================================
+// INICIAR APLICACIÓN
+// =========================================================
+
+document.addEventListener("DOMContentLoaded", () => {
+  configurarEventos();
+  cargarEscuelas();
 });
-
-campoArchivo?.addEventListener("change", mostrarInformacionArchivo);
-
-formulario?.addEventListener("submit", (evento) => {
-  evento.preventDefault();
-  subirArchivo();
-});
-
-// Estado inicial
-actualizarGrupos();
-actualizarCampoClave();
-mostrarInformacionArchivo();
-actualizarProgreso(0, "0 %");
