@@ -2,15 +2,12 @@
 const SCRIPT_URL =
   "https://script.google.com/macros/s/AKfycbx5wwASuQDPJi5PcMEj7Ud1pryVcivNBIBnDxH5vRZ0qSzeGfGBdM2z7tGuL9SE9Ha3/exec";
 
-const DATABASE_URL =
-  "https://raw.githubusercontent.com/derickrivas25-eng/Formulario_Transferencia_de_video/principal/escuelas.json";
-
 // =========================================================
-// INICIO: DATOS PROVISIONALES DE ESCUELAS
-// ELIMINAR ESTE BLOQUE CUANDO escuelas.json FUNCIONE
+// DATOS FIJOS DE ESCUELAS
+// NO SE CONSULTA NINGÚN ARCHIVO JSON
 // =========================================================
 
-const ESCUELAS_PROVISIONALES = {
+const ESCUELAS = {
   EBP: {
     nombre: "EBP",
     clave: "",
@@ -30,17 +27,20 @@ const ESCUELAS_PROVISIONALES = {
 };
 
 // =========================================================
-// FIN: DATOS PROVISIONALES DE ESCUELAS
+// CONFIGURACIÓN DE ARCHIVOS
 // =========================================================
 
 const CHUNK_SIZE = 20 * 1024 * 1024;
 const MAX_SIZE = 500 * 1024 * 1024;
 
-let escuelas = {};
+let escuelas = ESCUELAS;
 let uploading = false;
-let usandoProvisionales = false;
 
 const $ = (id) => document.getElementById(id);
+
+// =========================================================
+// MENSAJES
+// =========================================================
 
 function setStatus(message, type = "info") {
   const status = $("status");
@@ -60,6 +60,10 @@ function setProgress(value, message) {
   progress.value = value;
   progressText.textContent = message;
 }
+
+// =========================================================
+// ACTUALIZAR BOTÓN DE ENVÍO
+// =========================================================
 
 function actualizarBoton() {
   if (uploading) return;
@@ -89,55 +93,13 @@ function actualizarBoton() {
   void nombre;
 }
 
-async function cargarEscuelas() {
-  usandoProvisionales = false;
+// =========================================================
+// CARGAR ESCUELAS DESDE LOS DATOS FIJOS
+// =========================================================
 
-  try {
-    const respuesta = await fetch(DATABASE_URL, {
-      cache: "no-store"
-    });
+function cargarEscuelas() {
+  escuelas = ESCUELAS;
 
-    if (!respuesta.ok) {
-      throw new Error(
-        "No se pudo cargar escuelas.json desde GitHub."
-      );
-    }
-
-    const datos = await respuesta.json();
-
-    if (
-      !datos.escuelas ||
-      typeof datos.escuelas !== "object" ||
-      Array.isArray(datos.escuelas)
-    ) {
-      throw new Error(
-        "El JSON debe contener el objeto 'escuelas'."
-      );
-    }
-
-    escuelas = datos.escuelas;
-
-  } catch (error) {
-
-    // =====================================================
-    // INICIO: ACTIVACIÓN DE DATOS PROVISIONALES
-    // ELIMINAR CUANDO SE SOLUCIONE LA CARGA DEL JSON
-    // =====================================================
-
-    console.warn(
-      "Falló la carga del JSON. Se utilizarán los datos provisionales.",
-      error
-    );
-
-    escuelas = ESCUELAS_PROVISIONALES;
-    usandoProvisionales = true;
-
-    // =====================================================
-    // FIN: ACTIVACIÓN DE DATOS PROVISIONALES
-    // =====================================================
-  }
-
-  // Cargar las escuelas en el selector.
   const selector = $("school");
   selector.replaceChildren();
 
@@ -160,13 +122,15 @@ async function cargarEscuelas() {
 
   actualizarGrupos();
 
-  if (usandoProvisionales) {
-    setStatus(
-      "Modo provisional activo: se están utilizando los datos de EBP guardados en el JavaScript.",
-      "info"
-    );
-  }
+  setStatus(
+    "Aplicación iniciada usando datos fijos.",
+    "info"
+  );
 }
+
+// =========================================================
+// ACTUALIZAR GRUPOS
+// =========================================================
 
 function actualizarGrupos() {
   const codigo = $("school").value;
@@ -228,6 +192,10 @@ function actualizarGrupos() {
   actualizarBoton();
 }
 
+// =========================================================
+// VALIDAR ARCHIVO
+// =========================================================
+
 function validarArchivo(archivo) {
   if (!archivo) {
     throw new Error("Selecciona un archivo.");
@@ -261,6 +229,10 @@ function validarArchivo(archivo) {
   }
 }
 
+// =========================================================
+// CONVERTIR A BASE64
+// =========================================================
+
 function convertirABase64(arrayBuffer) {
   const bytes = new Uint8Array(arrayBuffer);
   let binario = "";
@@ -273,6 +245,10 @@ function convertirABase64(arrayBuffer) {
 
   return btoa(binario);
 }
+
+// =========================================================
+// ENVIAR UNA PARTE AL SERVIDOR
+// =========================================================
 
 async function enviarParte(datos) {
   const {
@@ -351,6 +327,10 @@ async function enviarParte(datos) {
 
   return resultado;
 }
+
+// =========================================================
+// SUBIR ARCHIVO
+// =========================================================
 
 async function subirArchivo(event) {
   event.preventDefault();
@@ -466,14 +446,6 @@ async function subirArchivo(event) {
 
     setProgress(100, "Carga completada: 100 %");
 
-    // Si se usan datos provisionales, conservar el aviso
-    // al finalizar la carga, sin interferir con el éxito.
-    console.info(
-      usandoProvisionales
-        ? "La aplicación continúa usando los datos provisionales de EBP."
-        : "Las escuelas se cargaron desde el JSON."
-    );
-
   } catch (error) {
     console.error(error);
 
@@ -496,6 +468,10 @@ async function subirArchivo(event) {
     actualizarBoton();
   }
 }
+
+// =========================================================
+// CONFIGURAR EVENTOS
+// =========================================================
 
 function configurarEventos() {
   $("school").addEventListener(
@@ -542,19 +518,11 @@ function configurarEventos() {
   );
 }
 
-document.addEventListener("DOMContentLoaded", async () => {
+// =========================================================
+// INICIAR APLICACIÓN
+// =========================================================
+
+document.addEventListener("DOMContentLoaded", () => {
   configurarEventos();
-
-  try {
-    await cargarEscuelas();
-
-  } catch (error) {
-    console.error(error);
-
-    setStatus(
-      `Error al iniciar: ${error.message}`,
-      "error"
-    );
-  }
+  cargarEscuelas();
 });
-
