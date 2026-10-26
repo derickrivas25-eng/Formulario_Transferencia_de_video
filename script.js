@@ -2,8 +2,10 @@
 const SCRIPT_URL =
   "https://script.google.com/macros/s/AKfycbx5wwASuQDPJi5PcMEj7Ud1pryVcivNBIBnDxH5vRZ0qSzeGfGBdM2z7tGuL9SE9Ha3/exec";
 
+
 const DATABASE_URL =
-  "https://raw.githubusercontent.com/TU_USUARIO/TU_REPOSITORIO/main/escuelas.json";
+  fetch('./escuelas.json'); // Esto es una ruta relativa 
+//https://raw.githubusercontent.com/derickrivas25-eng/Formulario_Transferencia_de_video/principal/escuelas.json
 
 const CHUNK_SIZE = 20 * 1024 * 1024;
 const MAX_SIZE = 500 * 1024 * 1024;
